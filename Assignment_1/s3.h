@@ -11,6 +11,8 @@
 #include <sys/stat.h>
 #include <sys/wait.h>
 
+#include <stdbool.h>
+
 ///Constants for array sizes, defined for clarity and code readability
 #define MAX_LINE 1024
 #define MAX_ARGS 128
@@ -44,4 +46,17 @@ void child(char *args[], int argsc);
 
 ///Program launching functions (add more as appropriate)
 void launch_program(char *args[], int argsc);
+
+//Determine whether a command contains redirection.
+bool command_with_redirection(char line[]);
+
+void child_with_redirection(char *args[], int argsc);
+
+//Three functions handling three redirection cases
+void input_redirection(char *args[], int argsc, int idx);
+void output_redirection(char *args[], int argsc, int idx, bool overwrite);
+
+
+//Programme with redirection launching
+void launch_program_with_redirection(char *args[], int argsc);
 #endif
