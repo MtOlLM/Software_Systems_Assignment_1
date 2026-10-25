@@ -51,6 +51,7 @@ void child(char *args[], int argsc)
     ///of the command specified in args[ARG_PROGNAME].
     ///For reference, see the code in lecture 3.
     execvp(args[ARG_PROGNAME], args);
+    //if execvp() successes, the following lines won't be excecuted
     printf("execvp() failed\n%s",args[0]);
     exit(1);
 }
@@ -126,6 +127,7 @@ void output_redirection(char *args[], int argsc, int idx, bool overwrite){
 
     int fd;
     if(overwrite){
+        //O_TRUNC clears the file before writing to it
         fd = open(args[idx], O_WRONLY | O_CREAT | O_TRUNC, 0644);
     }
     else{
@@ -148,14 +150,13 @@ void output_redirection(char *args[], int argsc, int idx, bool overwrite){
 }
 
 
-
-
 void child_with_redirection(char *args[], int argsc){
     //+1 for filename testing purpose
     char *clean_args[argsc+1];
     int clean_argsc = 0;
 
     for(int i = 0; i < argsc; i++){
+        //output redirection
         if(strcmp(">",args[i]) == 0 || strcmp(">>",args[i]) == 0){
             if(i + 1 >= argsc){
                 printf("missing output file name\n");
@@ -164,6 +165,7 @@ void child_with_redirection(char *args[], int argsc){
             output_redirection(args, argsc, i+1, strcmp(">",args[i]) == 0);
             i++;
         }
+        //input redirection
         else if(strcmp("<",args[i]) == 0){
             if(i + 1 >= argsc){
                 printf("missing output file name\n");
