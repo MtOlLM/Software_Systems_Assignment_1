@@ -37,26 +37,28 @@ static inline void reap()
 }
 
 ///Shell I/O and related functions (add more as appropriate)
-void read_command_line(char line[]);
-void construct_shell_prompt(char shell_prompt[]);
+void read_command_line(char line[], char *lwd);
+void construct_shell_prompt(char shell_prompt[], char *lwd);
 void parse_command(char line[], char *args[], int *argsc);
 
 ///Child functions (add more as appropriate)
 void child(char *args[], int argsc);
-
 ///Program launching functions (add more as appropriate)
 void launch_program(char *args[], int argsc);
 
 //Determine whether a command contains redirection.
 bool command_with_redirection(char line[]);
-
+//redirection command child function
 void child_with_redirection(char *args[], int argsc);
-
-//Three functions handling three redirection cases
+//functions handling two redirection cases
 void input_redirection(char *args[], int argsc, int idx);
 void output_redirection(char *args[], int argsc, int idx, bool overwrite);
 
+//initializes lwd with the cwd (using getcwd)
+void init_lwd(char *lwd);
 
+bool is_cd(char *args[],int argsc);
+void run_cd(char *args[],int argsc,char *lwd, char *pwd);
 //Programme with redirection launching
 void launch_program_with_redirection(char *args[], int argsc);
 #endif

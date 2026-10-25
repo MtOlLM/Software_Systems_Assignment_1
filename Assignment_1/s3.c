@@ -1,16 +1,18 @@
 #include "s3.h"
 
 ///Simple for now, but will be expanded in a following section
-void construct_shell_prompt(char shell_prompt[])
+void construct_shell_prompt(char shell_prompt[], char *lwd)
 {
-    strcpy(shell_prompt, "[s3]$ ");
+    strcpy(shell_prompt, "[");
+    strcat(shell_prompt, lwd);
+    strcat(shell_prompt, "]$ ");
 }
 
 ///Prints a shell prompt and reads input from the user
-void read_command_line(char line[])
+void read_command_line(char line[], char *lwd)
 {
     char shell_prompt[MAX_PROMPT_LEN];
-    construct_shell_prompt(shell_prompt);
+    construct_shell_prompt(shell_prompt, lwd);
     printf("%s", shell_prompt);
 
     ///See man page of fgets(...)
@@ -31,7 +33,7 @@ void parse_command(char line[], char *args[], int *argsc)
     ///There is no dynamic allocation.
 
     ///See the man page of strtok(...)
-    char *token = strtok(line, " ");
+    char *token = strtok(line, " \t\n");//any of three: space, tab and newline
     *argsc = 0;
     while (token != NULL && *argsc < MAX_ARGS - 1)
     {
@@ -197,5 +199,41 @@ void launch_program_with_redirection(char *args[], int argsc){
     else{
         //Parent branch
         reap();
+    }
+}
+
+void init_lwd(char *lwd){
+    //If lwd is NULL, getcwd() has failed
+    getcwd(lwd,MAX_PROMPT_LEN-6);
+    if(lwd == NULL){
+        printf("get directory failed\n");
+        exit(1);
+    }
+}
+
+bool is_cd(char *args[], int argsc){
+    if (strcmp(args[ARG_PROGNAME],"cd") == 0) return true;
+    return false;
+}
+
+void run_cd(char *args[],int argsc,char *lwd,char *pwd){
+    char *arg1;
+    arg1 = args[1];
+    if(arg1 == NULL){
+        strcpy(pwd,lwd);
+        strcpy(lwd,"/");
+    }else if(strcmp(arg1,"-") == 0){
+        //swap lwd and pwd
+        char temp[MAX_PROMPT_LEN-6]; 
+        strcpy(temp,lwd);
+        strcpy(lwd,pwd);
+        strcpy(pwd,temp);
+    }else{
+        strcpy(pwd,lwd);
+        strcpy(lwd,arg1);
+    }
+    if(chdir(lwd) == -1){
+        printf("change directory failed\n");
+        exit(1);
     }
 }
