@@ -58,43 +58,15 @@ void child(char *args[], int argsc)
     exit(1);
 }
 
-void launch_program(char *args[], int argsc)
-{
-    ///Implement this function:
-    ///Handle the 'exit' command;
-    ///so that the shell, not the child process,
-    ///exits.
-    if (strcmp("exit",args[ARG_PROGNAME]) == 0) {
-        exit(0);
+int command_with_redirection(char *args[], int argsc){
+    bool input,output;
+    input = false;
+    output = false;
+    for(int i = 0; i < argsc; i++){
+        if(strcmp(">",args[i]) == 0 || strcmp(">>",args[i]) == 0) output = true;
+        else if(strcmp("<",args[i]) == 0) input = true;
     }
-
-    ///fork() a child process.
-    ///In the child part of the code,
-    ///call child(args, argv)
-    ///For reference, see the code in lecture 2.
-    int rc = fork();
-    if(rc < 0){
-        printf("fork failed\n");
-        exit(1);
-    }
-    else if (rc == 0){
-        //Child branch
-        child(args, argsc);
-    }
-    else{
-        //Parent branch
-        reap();
-    }
-
-}
-
-bool command_with_redirection(char line[]){
-    for(int i = 0; i < strlen(line); i++){
-        char c;
-        c = line[i];
-        if(c == '<' || c == '>') return true;
-    }
-    return false;
+    return (output << OUTPUT_BIT) | input;
 }
 
 void input_redirection(char *args[], int argsc, int idx){
@@ -185,27 +157,9 @@ void child_with_redirection(char *args[], int argsc){
     child(clean_args,clean_argsc);
 }
 
-
-void launch_program_with_redirection(char *args[], int argsc){
-    int rc = fork();
-    if(rc < 0){
-        printf("fork failed\n");
-        exit(1);
-    }
-    else if (rc == 0){
-        //Child branch
-        child_with_redirection(args, argsc);
-    }
-    else{
-        //Parent branch
-        reap();
-    }
-}
-
 void init_lwd(char *lwd){
-    //If lwd is NULL, getcwd() has failed
-    getcwd(lwd,MAX_PROMPT_LEN-6);
-    if(lwd == NULL){
+    //If return NULL, getcwd() has failed
+    if(getcwd(lwd,MAX_PROMPT_LEN-6) == NULL){
         printf("get directory failed\n");
         exit(1);
     }
@@ -218,7 +172,7 @@ bool is_cd(char *args[], int argsc){
 
 void run_cd(char *args[],int argsc,char *lwd,char *pwd){
     char *arg1;
-    arg1 = args[1];
+    arg1 = args[ARG_1];
     if(arg1 == NULL){
         strcpy(pwd,lwd);
         strcpy(lwd,"/");
@@ -236,4 +190,140 @@ void run_cd(char *args[],int argsc,char *lwd,char *pwd){
         printf("change directory failed\n");
         exit(1);
     }
+}
+
+void pipe_redirection(int pipe_fd[], bool pipe_connection[]){
+    int dp;
+    for(int i=0; i < PIPE_PORT_NUM; i++){
+        if(pipe_fd[i] != -1){
+            if(pipe_connection[i]){
+                if(i <= INPUT_WRITE){
+                    dp = dup2(pipe_fd[i],STDIN_FILENO);
+                }else{
+                    dp = dup2(pipe_fd[i],STDOUT_FILENO);
+                }
+                if(dp == -1){
+                    printf("dup2 failed");
+                    exit(1);
+                }
+                close(pipe_fd[i]);
+            }else{
+                close(pipe_fd[i]);
+            }
+        }
+    }
+}
+
+void single_process_command(char *args[], int argsc, char *lwd, char *pwd,int pipe_fd[], bool pipe_connection[]){
+    if(is_cd(args, argsc)){//cd command
+            run_cd(args, argsc, lwd, pwd);
+    }
+    else if (strcmp("exit",args[ARG_PROGNAME]) == 0) {
+        exit(0);
+    }
+    else{
+        int rc = fork();
+        if(rc < 0){
+            printf("fork failed\n");
+            exit(1);
+        }
+        else if (rc == 0){
+            //Child branch
+            pipe_redirection(pipe_fd, pipe_connection);
+
+            if(command_with_redirection(args, argsc)){
+                child_with_redirection(args, argsc);
+            }else{
+                child(args, argsc);
+            }
+        }
+        else{
+            //Parent branch
+            reap();
+        }
+    }
+}
+
+
+void single_command_handler(char *args[], int argsc, char *lwd, char *pwd){
+    //current and previous command
+    char *args_c[MAX_ARGS], *args_p[MAX_ARGS];
+    int argsc_c = 0, argsc_p = -1;
+    int pipe_fd_c[PIPE_PORT_NUM], pipe_fd_p[PIPE_PORT_NUM];
+    bool pipe_connection_c[PIPE_PORT_NUM], pipe_connection_p[PIPE_PORT_NUM];
+    //initialization
+    for(int i = 0; i < PIPE_PORT_NUM; i++){
+        pipe_fd_p[i] = -1;
+        pipe_fd_c[i] = -1;
+        pipe_connection_c[i] = false;
+        pipe_connection_p[i] = false;
+    }
+    int fd[2];
+    int rc;
+    int is_redirected;
+
+    for (int i = 0; i < argsc; i++){
+        if(strcmp("|", args[i]) == 0){
+            if(argsc_c == 0 || (i + 1 >= argsc)){
+                printf("pipe input/output does not exist");
+                exit(1);
+            }
+            
+            args_c[argsc_c] = NULL;
+            rc = pipe(fd);
+            if(rc < 0){
+                printf("pipe creation failed");
+                exit(1);
+            }
+            pipe_fd_c[OUTPUT_READ] = fd[0];
+            pipe_fd_c[OUTPUT_WRITE] = fd[1];
+            pipe_connection_c[OUTPUT_READ] = false;
+            pipe_connection_c[INPUT_WRITE] = false;
+
+            is_redirected = command_with_redirection(args_c, argsc_c);
+            //The current command should read from the pipe if it:
+            //1. is not the first command
+            //2. does not have a read redirection
+            //3. the previous command (if exist) writes to the pipe
+            pipe_connection_c[INPUT_READ] = (argsc_p != -1) && !((is_redirected >> INPUT_BIT) & 1) && pipe_connection_p[OUTPUT_WRITE];
+            //The current command should write to the pipe if it:
+            //1. is not the last command (the last otwo will be excecuted separately)
+            //2. does not have a write redirection
+            //3. the next command (if exist) reads the pipe
+            pipe_connection_c[OUTPUT_WRITE] = !((is_redirected >> OUTPUT_BIT) & 1);
+            if(argsc_p != -1){
+                pipe_connection_p[OUTPUT_WRITE] = pipe_connection_p[OUTPUT_WRITE] && pipe_connection_c[INPUT_READ];
+                //assign a pointer for command execution
+                char *args_exe[MAX_ARGS];
+                memcpy(args_exe, args_p, sizeof(args_exe));
+                single_process_command(args_exe, argsc_p, lwd, pwd, pipe_fd_p, pipe_connection_p);
+            }
+
+            //copy
+            memcpy(args_p, args_c, sizeof(args_p));
+            argsc_p = argsc_c;
+            memcpy(pipe_connection_p, pipe_connection_c, sizeof(pipe_connection_p));
+            memcpy(pipe_fd_p, pipe_fd_c, sizeof(pipe_fd_p));
+            //reset
+            argsc_c = 0;
+            //for the next command coming
+            pipe_fd_c[INPUT_READ] = fd[0];
+            pipe_fd_c[INPUT_WRITE] = fd[1];
+        }
+        else{
+            args_c[argsc_c++] = args[i];
+        }
+    }
+    //excecute the last two command
+    args_c[argsc_c] = NULL;
+    pipe_fd_c[OUTPUT_READ] = -1;
+    pipe_fd_c[OUTPUT_WRITE] = -1;
+    pipe_connection_c[OUTPUT_READ] = false;
+    pipe_connection_c[INPUT_WRITE] = false;
+    is_redirected = command_with_redirection(args_c, argsc_c);
+    pipe_connection_c[INPUT_READ] = (argsc_p != -1) && !((is_redirected >> INPUT_BIT) & 1) && pipe_connection_p[OUTPUT_WRITE];
+    pipe_connection_c[OUTPUT_WRITE] = false;
+    pipe_connection_p[OUTPUT_WRITE] = pipe_connection_p[OUTPUT_WRITE] && pipe_connection_c[INPUT_READ];
+    single_process_command(args_c, argsc_c, lwd, pwd, pipe_fd_c, pipe_connection_c);
+    if(argsc_p != -1) single_process_command(args_p, argsc_p, lwd, pwd, pipe_fd_p, pipe_connection_p);
 }

@@ -17,6 +17,7 @@
 #define MAX_LINE 1024
 #define MAX_ARGS 128
 #define MAX_PROMPT_LEN 256
+#define PIPE_PORT_NUM 4
 
 ///Enum for readable argument indices (use where required)
 enum ArgIndex
@@ -27,6 +28,29 @@ enum ArgIndex
     ARG_3,
 };
 
+//Enum for readable pipe port indices
+enum PipePortIndex
+{
+    INPUT_READ,
+    INPUT_WRITE,
+    OUTPUT_READ,
+    OUTPUT_WRITE
+};
+
+//Enum for readable redirection indices
+enum RedirectionIndex
+{
+    NO_REDIRECTION,
+    INPUT_REDIRECTION,
+    OUTPUT_REDIRECTION,
+    INOUT_REDIRECTION
+};
+
+//Enum for readable redirection bits
+enum RedirectionBit{
+    INPUT_BIT,
+    OUTPUT_BIT
+};
 ///With inline functions, the compiler replaces the function call 
 ///with the actual function code;
 ///inline improves speed and readability; meant for short functions (a few lines).
@@ -44,10 +68,9 @@ void parse_command(char line[], char *args[], int *argsc);
 ///Child functions (add more as appropriate)
 void child(char *args[], int argsc);
 ///Program launching functions (add more as appropriate)
-void launch_program(char *args[], int argsc);
 
 //Determine whether a command contains redirection.
-bool command_with_redirection(char line[]);
+int command_with_redirection(char *args[], int argsc);
 //redirection command child function
 void child_with_redirection(char *args[], int argsc);
 //functions handling two redirection cases
@@ -59,6 +82,8 @@ void init_lwd(char *lwd);
 
 bool is_cd(char *args[],int argsc);
 void run_cd(char *args[],int argsc,char *lwd, char *pwd);
-//Programme with redirection launching
-void launch_program_with_redirection(char *args[], int argsc);
+
+void pipe_redirection(int pipe_fd[], bool pipe_connection[]);
+void single_process_command(char *args[], int argsc, char *lwd, char *pwd,int pipe_fd[], bool pipe_connection[]);
+void single_command_handler(char *args[], int argsc, char *lwd, char *pwd);
 #endif
