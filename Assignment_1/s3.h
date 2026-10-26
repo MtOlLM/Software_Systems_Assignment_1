@@ -83,7 +83,8 @@ void init_lwd(char *lwd);
 bool is_cd(char *args[],int argsc);
 void run_cd(char *args[],int argsc,char *lwd, char *pwd);
 
+void pipe_closer(int pipe_fd[]);
 void pipe_redirection(int pipe_fd[], bool pipe_connection[]);
-void single_process_command(char *args[], int argsc, char *lwd, char *pwd,int pipe_fd[], bool pipe_connection[]);
+void single_process_command(char *args[], int argsc, char *lwd, char *pwd,int pipe_fd[], bool pipe_connection[], int *childcnt);
 void single_command_handler(char *args[], int argsc, char *lwd, char *pwd);
 #endif

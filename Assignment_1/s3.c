@@ -192,6 +192,14 @@ void run_cd(char *args[],int argsc,char *lwd,char *pwd){
     }
 }
 
+void pipe_closer(int pipe_fd[]){
+    for(int i = 0; i < PIPE_PORT_NUM; i++){
+        if(pipe_fd[i] != -1){
+            close(pipe_fd[i]);
+        }
+    }
+}
+
 void pipe_redirection(int pipe_fd[], bool pipe_connection[]){
     int dp;
     for(int i=0; i < PIPE_PORT_NUM; i++){
@@ -206,15 +214,13 @@ void pipe_redirection(int pipe_fd[], bool pipe_connection[]){
                     printf("dup2 failed");
                     exit(1);
                 }
-                close(pipe_fd[i]);
-            }else{
-                close(pipe_fd[i]);
             }
+            close(pipe_fd[i]);
         }
     }
 }
 
-void single_process_command(char *args[], int argsc, char *lwd, char *pwd,int pipe_fd[], bool pipe_connection[]){
+void single_process_command(char *args[], int argsc, char *lwd, char *pwd,int pipe_fd[], bool pipe_connection[], int *childcnt){
     if(is_cd(args, argsc)){//cd command
             run_cd(args, argsc, lwd, pwd);
     }
@@ -236,10 +242,11 @@ void single_process_command(char *args[], int argsc, char *lwd, char *pwd,int pi
             }else{
                 child(args, argsc);
             }
+            pipe_closer(pipe_fd);
         }
         else{
             //Parent branch
-            reap();
+            (*childcnt)++;
         }
     }
 }
@@ -258,9 +265,15 @@ void single_command_handler(char *args[], int argsc, char *lwd, char *pwd){
         pipe_connection_c[i] = false;
         pipe_connection_p[i] = false;
     }
-    int fd[2];
+    int fd[2],fd_p[2],fd_pp[2];
+    for(int i = 0; i < 2;i++){
+        fd[i] = -1;
+        fd_p[i] = -1;
+        fd_pp[i] = -1;
+    }
     int rc;
     int is_redirected;
+    int childcnt = 0;
 
     for (int i = 0; i < argsc; i++){
         if(strcmp("|", args[i]) == 0){
@@ -296,7 +309,8 @@ void single_command_handler(char *args[], int argsc, char *lwd, char *pwd){
                 //assign a pointer for command execution
                 char *args_exe[MAX_ARGS];
                 memcpy(args_exe, args_p, sizeof(args_exe));
-                single_process_command(args_exe, argsc_p, lwd, pwd, pipe_fd_p, pipe_connection_p);
+                single_process_command(args_exe, argsc_p, lwd, pwd, pipe_fd_p, pipe_connection_p, &childcnt);
+                pipe_closer(fd_pp);
             }
 
             //copy
@@ -309,6 +323,10 @@ void single_command_handler(char *args[], int argsc, char *lwd, char *pwd){
             //for the next command coming
             pipe_fd_c[INPUT_READ] = fd[0];
             pipe_fd_c[INPUT_WRITE] = fd[1];
+            fd_pp[0] = fd_p[0];
+            fd_pp[1] = fd_p[1];
+            fd_p[0] = fd[0];
+            fd_p[1] = fd[1];
         }
         else{
             args_c[argsc_c++] = args[i];
@@ -324,6 +342,14 @@ void single_command_handler(char *args[], int argsc, char *lwd, char *pwd){
     pipe_connection_c[INPUT_READ] = (argsc_p != -1) && !((is_redirected >> INPUT_BIT) & 1) && pipe_connection_p[OUTPUT_WRITE];
     pipe_connection_c[OUTPUT_WRITE] = false;
     pipe_connection_p[OUTPUT_WRITE] = pipe_connection_p[OUTPUT_WRITE] && pipe_connection_c[INPUT_READ];
-    single_process_command(args_c, argsc_c, lwd, pwd, pipe_fd_c, pipe_connection_c);
-    if(argsc_p != -1) single_process_command(args_p, argsc_p, lwd, pwd, pipe_fd_p, pipe_connection_p);
+    if(argsc_p != -1){
+        single_process_command(args_p, argsc_p, lwd, pwd, pipe_fd_p, pipe_connection_p, &childcnt);
+        pipe_closer(fd_pp);
+    } 
+    single_process_command(args_c, argsc_c, lwd, pwd, pipe_fd_c, pipe_connection_c, &childcnt);
+    pipe_closer(fd_p);
+    //reap all child together
+    for(int i = 0; i < childcnt; i++){
+        reap();
+    }
 }
