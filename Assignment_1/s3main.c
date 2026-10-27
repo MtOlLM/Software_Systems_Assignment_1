@@ -6,9 +6,9 @@ int main(int argc, char *argv[]){
     char line[MAX_LINE];
 
     ///The last (previous) working directory 
-    char lwd[MAX_PROMPT_LEN-6]; 
+    char lwd[MAX_PROMPT_LEN]; 
     //The working directory saved for cd - command
-    char pwd[MAX_PROMPT_LEN-6];
+    char pwd[MAX_PROMPT_LEN];
     //initialize two directories
     init_lwd(lwd);///Implement this function: initializes lwd with the cwd (using getcwd)
     strcpy(pwd,lwd);
@@ -24,14 +24,13 @@ int main(int argc, char *argv[]){
     int argsc_b = 0;
 
     while (1) {
-        init_lwd(lwd);
         read_command_line(line, lwd); ///Notice the additional parameter (required for prompt construction)
         parse_command(line, args, &argsc);
         for(int i = 0; i < argsc; i++){
             if((strcmp(args[i],";") == 0) || (i == argsc - 1)){
                 if(i == argsc - 1) args_b[argsc_b++] = args[i];
                 args_b[argsc_b] = NULL;
-                single_command_handler(args_b, argsc_b, lwd, pwd);
+                if(argsc_b != 0) single_command_handler(args_b, argsc_b, lwd, pwd);
                 argsc_b = 0;
             }else{
                 args_b[argsc_b++] = args[i];

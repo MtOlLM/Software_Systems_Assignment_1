@@ -18,7 +18,7 @@ void read_command_line(char line[], char *lwd)
     ///See man page of fgets(...)
     if (fgets(line, MAX_LINE, stdin) == NULL)
     {
-        perror("fgets failed");
+        perror("fgets failed\n");
         exit(1);
     }
     ///Remove newline (enter)
@@ -38,7 +38,7 @@ void parse_command(char line[], char *args[], int *argsc)
     while (token != NULL && *argsc < MAX_ARGS - 1)
     {
         args[(*argsc)++] = token;
-        token = strtok(NULL, " ");
+        token = strtok(NULL, " \t\n");
     }
     
     args[*argsc] = NULL; ///args must be null terminated
@@ -54,7 +54,7 @@ void child(char *args[], int argsc)
     ///For reference, see the code in lecture 3.
     execvp(args[ARG_PROGNAME], args);
     //if execvp() successes, the following lines won't be excecuted
-    printf("execvp() failed\n%s",args[0]);
+    printf("execvp() failed%s\n",args[0]);
     exit(1);
 }
 
@@ -72,7 +72,7 @@ int command_with_redirection(char *args[], int argsc){
 void input_redirection(char *args[], int argsc, int idx){
     //making 100% sure
     if(idx >= argsc){
-        printf("missing output file name\n");
+        printf("missing input file name\n");
         exit(1);
     }
 
@@ -171,56 +171,39 @@ bool is_cd(char *args[], int argsc){
 }
 
 void run_cd(char *args[],int argsc,char *lwd,char *pwd){
-    char *arg1;
-    arg1 = args[ARG_1];
-    if(arg1 == NULL){
-        strcpy(pwd,lwd);
-        strcpy(lwd,"/");
-    }else if(strcmp(arg1,"-") == 0){
-        //swap lwd and pwd
-        char temp[MAX_PROMPT_LEN-6]; 
-        strcpy(temp,lwd);
-        strcpy(lwd,pwd);
-        strcpy(pwd,temp);
-    }else{
-        strcpy(pwd,lwd);
-        strcpy(lwd,arg1);
-    }
-    if(chdir(lwd) == -1){
+    char cd[MAX_PROMPT_LEN];
+    char *arg1 = args[ARG_1];
+
+    if(arg1 == NULL) strcpy(cd, "/");
+    else if(strcmp(arg1,"-") == 0) strcpy(cd, pwd);
+    else strcpy(cd, arg1);
+
+    if(chdir(cd) == -1){
         printf("change directory failed\n");
+        return;
+    }
+
+    strcpy(pwd,lwd);
+    init_lwd(lwd);
+}
+
+void pipe_redirection(int in_fd, int out_fd, int unused_fd){
+    //wire up the pipe ends
+    if((in_fd != -1) && (dup2(in_fd, STDIN_FILENO) == -1)){
+        printf("dup2 failed\n");
         exit(1);
     }
-}
-
-void pipe_closer(int pipe_fd[]){
-    for(int i = 0; i < PIPE_PORT_NUM; i++){
-        if(pipe_fd[i] != -1){
-            close(pipe_fd[i]);
-        }
+    if((out_fd != -1) && (dup2(out_fd, STDOUT_FILENO) == -1)){
+        printf("dup2 failed\n");
+        exit(1);
     }
+    //close all original pipe ports
+    if(in_fd != -1) close(in_fd);
+    if(out_fd != -1) close(out_fd);
+    if(unused_fd != -1) close(unused_fd);
 }
 
-void pipe_redirection(int pipe_fd[], bool pipe_connection[]){
-    int dp;
-    for(int i=0; i < PIPE_PORT_NUM; i++){
-        if(pipe_fd[i] != -1){
-            if(pipe_connection[i]){
-                if(i <= INPUT_WRITE){
-                    dp = dup2(pipe_fd[i],STDIN_FILENO);
-                }else{
-                    dp = dup2(pipe_fd[i],STDOUT_FILENO);
-                }
-                if(dp == -1){
-                    printf("dup2 failed");
-                    exit(1);
-                }
-            }
-            close(pipe_fd[i]);
-        }
-    }
-}
-
-void single_process_command(char *args[], int argsc, char *lwd, char *pwd,int pipe_fd[], bool pipe_connection[], int *childcnt){
+void single_stage_command(char *args[], int argsc, char *lwd, char *pwd,int in_fd, int out_fd, int unused_fd, int *childcnt){
     if(is_cd(args, argsc)){//cd command
             run_cd(args, argsc, lwd, pwd);
     }
@@ -235,119 +218,60 @@ void single_process_command(char *args[], int argsc, char *lwd, char *pwd,int pi
         }
         else if (rc == 0){
             //Child branch
-            pipe_redirection(pipe_fd, pipe_connection);
+            pipe_redirection(in_fd, out_fd, unused_fd);
 
             if(command_with_redirection(args, argsc)){
                 child_with_redirection(args, argsc);
             }else{
                 child(args, argsc);
             }
-            pipe_closer(pipe_fd);
         }
         else{
             //Parent branch
             (*childcnt)++;
         }
     }
+    if (in_fd != -1)  close(in_fd);
+    if (out_fd != -1) close(out_fd);
 }
 
 
 void single_command_handler(char *args[], int argsc, char *lwd, char *pwd){
     //current and previous command
-    char *args_c[MAX_ARGS], *args_p[MAX_ARGS];
-    int argsc_c = 0, argsc_p = -1;
-    int pipe_fd_c[PIPE_PORT_NUM], pipe_fd_p[PIPE_PORT_NUM];
-    bool pipe_connection_c[PIPE_PORT_NUM], pipe_connection_p[PIPE_PORT_NUM];
-    //initialization
-    for(int i = 0; i < PIPE_PORT_NUM; i++){
-        pipe_fd_p[i] = -1;
-        pipe_fd_c[i] = -1;
-        pipe_connection_c[i] = false;
-        pipe_connection_p[i] = false;
-    }
-    int fd[2],fd_p[2],fd_pp[2];
-    for(int i = 0; i < 2;i++){
-        fd[i] = -1;
-        fd_p[i] = -1;
-        fd_pp[i] = -1;
-    }
-    int rc;
-    int is_redirected;
+    char *cmd[MAX_ARGS];
+    int cmdc = 0;
+    int pre_read = -1;
     int childcnt = 0;
-
-    for (int i = 0; i < argsc; i++){
-        if(strcmp("|", args[i]) == 0){
-            if(argsc_c == 0 || (i + 1 >= argsc)){
-                printf("pipe input/output does not exist");
-                exit(1);
-            }
-            
-            args_c[argsc_c] = NULL;
-            rc = pipe(fd);
-            if(rc < 0){
-                printf("pipe creation failed");
-                exit(1);
-            }
-            pipe_fd_c[OUTPUT_READ] = fd[0];
-            pipe_fd_c[OUTPUT_WRITE] = fd[1];
-            pipe_connection_c[OUTPUT_READ] = false;
-            pipe_connection_c[INPUT_WRITE] = false;
-
-            is_redirected = command_with_redirection(args_c, argsc_c);
-            //The current command should read from the pipe if it:
-            //1. is not the first command
-            //2. does not have a read redirection
-            //3. the previous command (if exist) writes to the pipe
-            pipe_connection_c[INPUT_READ] = (argsc_p != -1) && !((is_redirected >> INPUT_BIT) & 1) && pipe_connection_p[OUTPUT_WRITE];
-            //The current command should write to the pipe if it:
-            //1. is not the last command (the last otwo will be excecuted separately)
-            //2. does not have a write redirection
-            //3. the next command (if exist) reads the pipe
-            pipe_connection_c[OUTPUT_WRITE] = !((is_redirected >> OUTPUT_BIT) & 1);
-            if(argsc_p != -1){
-                pipe_connection_p[OUTPUT_WRITE] = pipe_connection_p[OUTPUT_WRITE] && pipe_connection_c[INPUT_READ];
-                //assign a pointer for command execution
-                char *args_exe[MAX_ARGS];
-                memcpy(args_exe, args_p, sizeof(args_exe));
-                single_process_command(args_exe, argsc_p, lwd, pwd, pipe_fd_p, pipe_connection_p, &childcnt);
-                pipe_closer(fd_pp);
-            }
-
-            //copy
-            memcpy(args_p, args_c, sizeof(args_p));
-            argsc_p = argsc_c;
-            memcpy(pipe_connection_p, pipe_connection_c, sizeof(pipe_connection_p));
-            memcpy(pipe_fd_p, pipe_fd_c, sizeof(pipe_fd_p));
-            //reset
-            argsc_c = 0;
-            //for the next command coming
-            pipe_fd_c[INPUT_READ] = fd[0];
-            pipe_fd_c[INPUT_WRITE] = fd[1];
-            fd_pp[0] = fd_p[0];
-            fd_pp[1] = fd_p[1];
-            fd_p[0] = fd[0];
-            fd_p[1] = fd[1];
+    for (int i = 0; i <= argsc; i++){
+        bool is_last = i == argsc;
+        bool is_pipe = !is_last && (strcmp("|", args[i]) == 0);
+        if(!is_last && !is_pipe){
+            cmd[cmdc++] = args[i];
+            continue;
         }
-        else{
-            args_c[argsc_c++] = args[i];
+        
+        if(cmdc == 0){
+            printf("pipe input/output does not exist\n");
+            if(pre_read != -1) close(pre_read);
+            break;
         }
+
+        cmd[cmdc] = NULL;
+
+        int fd[2] = {-1, -1};
+
+        if(!is_last){
+            if(pipe(fd) < 0){
+                printf("pipe creation failed\n");
+                exit(1);
+            }   
+        }
+
+        single_stage_command(cmd, cmdc, lwd, pwd, pre_read, fd[1], fd[0], &childcnt);
+        pre_read = fd[0];
+        cmdc = 0;
     }
-    //excecute the last two command
-    args_c[argsc_c] = NULL;
-    pipe_fd_c[OUTPUT_READ] = -1;
-    pipe_fd_c[OUTPUT_WRITE] = -1;
-    pipe_connection_c[OUTPUT_READ] = false;
-    pipe_connection_c[INPUT_WRITE] = false;
-    is_redirected = command_with_redirection(args_c, argsc_c);
-    pipe_connection_c[INPUT_READ] = (argsc_p != -1) && !((is_redirected >> INPUT_BIT) & 1) && pipe_connection_p[OUTPUT_WRITE];
-    pipe_connection_c[OUTPUT_WRITE] = false;
-    pipe_connection_p[OUTPUT_WRITE] = pipe_connection_p[OUTPUT_WRITE] && pipe_connection_c[INPUT_READ];
-    if(argsc_p != -1){
-        single_process_command(args_p, argsc_p, lwd, pwd, pipe_fd_p, pipe_connection_p, &childcnt);
-        pipe_closer(fd_pp);
-    } 
-    single_process_command(args_c, argsc_c, lwd, pwd, pipe_fd_c, pipe_connection_c, &childcnt);
-    pipe_closer(fd_p);
+
     //reap all child together
     for(int i = 0; i < childcnt; i++){
         reap();

@@ -28,23 +28,6 @@ enum ArgIndex
     ARG_3,
 };
 
-//Enum for readable pipe port indices
-enum PipePortIndex
-{
-    INPUT_READ,
-    INPUT_WRITE,
-    OUTPUT_READ,
-    OUTPUT_WRITE
-};
-
-//Enum for readable redirection indices
-enum RedirectionIndex
-{
-    NO_REDIRECTION,
-    INPUT_REDIRECTION,
-    OUTPUT_REDIRECTION,
-    INOUT_REDIRECTION
-};
 
 //Enum for readable redirection bits
 enum RedirectionBit{
@@ -83,8 +66,7 @@ void init_lwd(char *lwd);
 bool is_cd(char *args[],int argsc);
 void run_cd(char *args[],int argsc,char *lwd, char *pwd);
 
-void pipe_closer(int pipe_fd[]);
-void pipe_redirection(int pipe_fd[], bool pipe_connection[]);
-void single_process_command(char *args[], int argsc, char *lwd, char *pwd,int pipe_fd[], bool pipe_connection[], int *childcnt);
+void pipe_redirection(int in_fd, int out_fd, int unused_fd);
+void single_stage_command(char *args[], int argsc, char *lwd, char *pwd,int in_fd, int out_fd, int unused_fd, int *childcnt);
 void single_command_handler(char *args[], int argsc, char *lwd, char *pwd);
 #endif
