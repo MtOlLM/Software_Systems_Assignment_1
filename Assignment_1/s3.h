@@ -53,7 +53,7 @@ void child(char *args[], int argsc);
 ///Program launching functions (add more as appropriate)
 
 //Determine whether a command contains redirection.
-int command_with_redirection(char *args[], int argsc);
+bool command_with_redirection(char *args[], int argsc);
 //redirection command child function
 void child_with_redirection(char *args[], int argsc);
 //functions handling two redirection cases
@@ -69,4 +69,11 @@ void run_cd(char *args[],int argsc,char *lwd, char *pwd);
 void pipe_redirection(int in_fd, int out_fd, int unused_fd);
 void single_stage_command(char *args[], int argsc, char *lwd, char *pwd,int in_fd, int out_fd, int unused_fd, int *childcnt);
 void single_command_handler(char *args[], int argsc, char *lwd, char *pwd);
+
+bool is_subshell(char line[]);
+void index_finder(char line[], int *l_idx, int *r_idx);
+void str_div(char line[], char front[], char middle[], char back[], int l_idx, int r_idx);
+void subshell_handler(char line[], char *lwd, char *pwd);
+void non_subshell_handler(char line[], char *lwd, char *pwd);
+void shell_handler(char line[], char *lwd, char *pwd);
 #endif

@@ -58,15 +58,11 @@ void child(char *args[], int argsc)
     exit(1);
 }
 
-int command_with_redirection(char *args[], int argsc){
-    bool input,output;
-    input = false;
-    output = false;
+bool command_with_redirection(char *args[], int argsc){
     for(int i = 0; i < argsc; i++){
-        if(strcmp(">",args[i]) == 0 || strcmp(">>",args[i]) == 0) output = true;
-        else if(strcmp("<",args[i]) == 0) input = true;
+        if(strcmp(">",args[i]) == 0 || strcmp(">>",args[i]) == 0 || strcmp("<",args[i]) == 0) return true;
     }
-    return (output << OUTPUT_BIT) | input;
+    return false;
 }
 
 void input_redirection(char *args[], int argsc, int idx){
@@ -277,3 +273,117 @@ void single_command_handler(char *args[], int argsc, char *lwd, char *pwd){
         reap();
     }
 }
+
+bool is_subshell(char line[]){
+    int l_cnt = 0, r_cnt = 0;
+
+    int len = strlen(line);
+    for(int i = 0; i < len; i++){
+        if(r_cnt > l_cnt){
+            printf("subshell error\n");
+            exit(1);
+        }
+        if(line[i] == '('){
+            l_cnt++;
+        }
+        else if(line[i] == ')'){
+            r_cnt++;
+        }
+    }
+    if(l_cnt != r_cnt){
+        printf("subshell error\n");
+        exit(1);
+    }
+    return l_cnt != 0;
+}
+
+void index_finder(char line[], int *l_idx, int *r_idx){
+    int l_cnt = 0, r_cnt = 0;
+
+    int len = strlen(line);
+    for(int i = 0; i < len; i++){
+        if(line[i] == '('){
+            l_cnt++;
+            if(l_cnt == 1){
+                *l_idx = i;
+            }
+        }
+        else if(line[i] == ')'){
+            r_cnt++;
+            if(l_cnt == r_cnt){
+                *r_idx = i;
+                return;
+            }
+        }
+    }
+}
+
+void str_div(char line[], char front[], char middle[], char back[], int l_idx, int r_idx){
+    int len = strlen(line);
+    int f = 0, m = 0, b = 0;
+    for(int i = 0; i < len; i++){
+        if(i < (l_idx-2)){ //so the ';' wont be included int the front string
+            front[f++] = line[i];
+        }
+        else if(i < r_idx && i > l_idx){
+            middle[m++] = line[i];
+        }
+        else if(i > (r_idx+2)){
+            back[b++] = line[i];
+        }
+    }
+    front[f] = '\0';
+    middle[m] = '\0';
+    strcat(middle, " ; exit"); // so the subshell can exit automatically
+    back[b] = '\0';
+}
+
+void subshell_handler(char line[], char *lwd, char *pwd){
+    int l_idx, r_idx;
+    index_finder(line, &l_idx, &r_idx);
+    char front[MAX_PROMPT_LEN], middle[MAX_PROMPT_LEN], back[MAX_PROMPT_LEN];
+    str_div(line, front, middle, back, l_idx, r_idx);
+
+    shell_handler(front, lwd, pwd);
+
+    int rc = fork();
+    if(rc < 0){
+        printf("fork failed\n");
+        exit(1);
+    }
+    else if (rc == 0){
+        shell_handler(middle, lwd, pwd);
+    }
+    else{
+        reap();
+    }
+
+    shell_handler(back, lwd, pwd);
+}
+
+void non_subshell_handler(char line[], char *lwd, char *pwd){
+    char *args[MAX_ARGS];
+    int argsc;
+    char *args_b[MAX_ARGS];
+    int argsc_b = 0;
+    parse_command(line, args, &argsc);
+    for(int i = 0; i < argsc; i++){
+        if((strcmp(args[i],";") == 0) || (i == argsc - 1)){
+            if(i == argsc - 1) args_b[argsc_b++] = args[i];
+            args_b[argsc_b] = NULL;
+            if(argsc_b != 0) single_command_handler(args_b, argsc_b, lwd, pwd);
+            argsc_b = 0;
+        }else{
+            args_b[argsc_b++] = args[i];
+        }
+    }
+}
+
+void shell_handler(char line[], char *lwd, char *pwd){
+    if(is_subshell(line)){
+        subshell_handler(line, lwd, pwd);
+    }else{
+        non_subshell_handler(line, lwd, pwd);
+    }
+}
+

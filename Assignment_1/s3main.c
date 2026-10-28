@@ -1,7 +1,6 @@
 #include "s3.h"
 
 int main(int argc, char *argv[]){
-
     ///Stores the command line input
     char line[MAX_LINE];
 
@@ -12,30 +11,10 @@ int main(int argc, char *argv[]){
     //initialize two directories
     init_lwd(lwd);///Implement this function: initializes lwd with the cwd (using getcwd)
     strcpy(pwd,lwd);
-    
-    //Stores pointers to command arguments.
-    //The first element of the array is the command name.
-    char *args[MAX_ARGS];
-    ///Stores the number of arguments
-    int argsc;
-
-    //for batched commands
-    char *args_b[MAX_ARGS];
-    int argsc_b = 0;
 
     while (1) {
         read_command_line(line, lwd); ///Notice the additional parameter (required for prompt construction)
-        parse_command(line, args, &argsc);
-        for(int i = 0; i < argsc; i++){
-            if((strcmp(args[i],";") == 0) || (i == argsc - 1)){
-                if(i == argsc - 1) args_b[argsc_b++] = args[i];
-                args_b[argsc_b] = NULL;
-                if(argsc_b != 0) single_command_handler(args_b, argsc_b, lwd, pwd);
-                argsc_b = 0;
-            }else{
-                args_b[argsc_b++] = args[i];
-            }
-        }
+        shell_handler(line, lwd, pwd);
     }
 
     return 0;
