@@ -29,11 +29,6 @@ enum ArgIndex
 };
 
 
-//Enum for readable redirection bits
-enum RedirectionBit{
-    INPUT_BIT,
-    OUTPUT_BIT
-};
 ///With inline functions, the compiler replaces the function call 
 ///with the actual function code;
 ///inline improves speed and readability; meant for short functions (a few lines).
